@@ -5,22 +5,22 @@ module.exports = {
   name: 'ai',
   description: 'Chat with AI',
   usage: 'ai [message]',
-  author: 'coffee',
+  author: 'GeoDevz69',
 
   async execute(senderId, args, token) {
     const prompt = args.join(' ').trim() || 'Hello';
 
     try {
       const { data } = await axios.get(API_URL, {
-        params: { prompt, model: 'openai', user: senderId },
+        params: { ask: prompt },
         timeout: 15000
       });
 
-      if (!data?.status || typeof data.data !== 'string') {
+      if (!data) {
         throw new Error('Invalid API response');
       }
 
-      const aiResponse = makeBold(data.data.trim());
+      const aiResponse = makeBold(data.trim());
       await sendChunks(senderId, aiResponse, token);
 
     } catch (error) {
@@ -36,10 +36,10 @@ module.exports = {
   }
 };
 
-const API_URL = 'https://api-library-kohi-production.up.railway.app/api/pollination-ai';
+const API_URL = 'https://betadash-api-swordslush-production.up.railway.app/opera';
 const MAX_CHUNK = 1900;
 
-const HEADER = '💬 | 𝙶𝚛𝚘𝚔 𝙰𝚒\n・────────────・\n';
+const HEADER = '💬 | C0D3X ASSISTANT\n・────────────・\n';
 const FOOTER = '\n・──── >ᴗ< ─────・';
 
 function makeBold(text) {
