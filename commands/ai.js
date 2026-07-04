@@ -1,175 +1,134 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
-// Cooldown system
-const userCooldowns = new Map();
-const COOLDOWN_TIME = 10; // 10 seconds
+// Queue system para sa sunod-sunod na requests
+const requestQueue = [];
+let isProcessing = false;
+const userRequests = new Map(); // Track per user
 
 module.exports = {
   name: 'ai',
-  description: 'AI with countdown timer',
+  description: 'Smart AI with Queue System',
   usage: 'ai [message]',
   author: 'coffee',
 
   async execute(senderId, args, token) {
     const prompt = args.join(' ').trim() || 'Hello';
 
-    try {
-      // Check cooldown muna bago mag-request
-      const cooldownCheck = checkCooldown(senderId);
-      if (cooldownCheck.onCooldown) {
-        const formatted = String(cooldownCheck.remaining).padStart(2, '0') + 's';
-        await sendMessage(senderId, {
-          text: `⏳ ${formatted}`
-        }, token);
-        return;
-      }
+    // Add to queue
+    requestQueue.push({
+      senderId,
+      prompt,
+      token,
+      timestamp: Date.now()
+    });
 
-      // Process the AI request
-      await processAIRequest(senderId, prompt, token);
-
-    } catch (error) {
-      console.error('[AI Error]:', error.message);
-      
-      // Set cooldown kahit nag-error para hindi ma-spam
-      userCooldowns.set(senderId, Date.now());
-      
-      // Start countdown after error
-      await startCountdown(senderId, token);
-      
-      // Send error message
-      await sendMessage(senderId, {
-        text: '❌ Request timed out. Please wait.'
-      }, token);
+    // Start processing if not already
+    if (!isProcessing) {
+      processQueue();
     }
+
+    // Send initial response na nagpro-process
+    await sendMessage(senderId, {
+      text: '⏳ Processing your request...'
+    }, token);
   }
 };
 
-function checkCooldown(userId) {
-  const lastRequest = userCooldowns.get(userId);
-  if (!lastRequest) {
-    return { onCooldown: false, remaining: 0 };
+async function processQueue() {
+  if (requestQueue.length === 0) {
+    isProcessing = false;
+    return;
   }
-  
-  const elapsed = (Date.now() - lastRequest) / 1000;
-  const remaining = Math.ceil(COOLDOWN_TIME - elapsed);
-  
-  if (remaining > 0) {
-    return { onCooldown: true, remaining };
-  }
-  
-  userCooldowns.delete(userId);
-  return { onCooldown: false, remaining: 0 };
-}
 
-async function processAIRequest(userId, prompt, token) {
-  // Send typing indicator
-  await sendMessage(userId, { typing: true }, token);
+  isProcessing = true;
+  const request = requestQueue.shift(); // Get first request
 
   try {
-    // Try to get AI response with timeout
-    const response = await getAIResponse(prompt, userId);
-    
-    // Set cooldown after successful response
-    userCooldowns.set(userId, Date.now());
+    // Process the request
+    await processAIRequest(request.senderId, request.prompt, request.token);
+  } catch (error) {
+    console.error('Queue Error:', error.message);
+    await sendMessage(request.senderId, {
+      text: getSmartReply(request.prompt)
+    }, request.token);
+  }
+
+  // Process next in queue after 500ms delay
+  setTimeout(processQueue, 500);
+}
+
+async function processAIRequest(senderId, prompt, token) {
+  try {
+    // Try multiple endpoints
+    const response = await getAIResponse(prompt, senderId);
     
     if (response) {
-      await sendMessage(userId, {
+      await sendMessage(senderId, {
         text: response.slice(0, 2000)
       }, token);
     } else {
-      await sendMessage(userId, {
-        text: getFallbackResponse(prompt)
+      await sendMessage(senderId, {
+        text: getSmartReply(prompt)
       }, token);
     }
-    
-    // Start countdown after response
-    await startCountdown(userId, token);
-    
   } catch (error) {
-    // If error, set cooldown and show countdown
-    userCooldowns.set(userId, Date.now());
-    await startCountdown(userId, token);
-    throw error; // Re-throw para ma-handle ng outer catch
+    // Fallback
+    await sendMessage(senderId, {
+      text: getSmartReply(prompt)
+    }, token);
   }
-}
-
-async function startCountdown(userId, token) {
-  let remaining = COOLDOWN_TIME;
-  
-  // Send initial countdown
-  const formatted = String(remaining).padStart(2, '0') + 's';
-  await sendMessage(userId, {
-    text: `⏳ ${formatted}`
-  }, token);
-  
-  // Update countdown every second (for 5 seconds lang to avoid spam)
-  const timer = setInterval(async () => {
-    remaining--;
-    
-    if (remaining <= 0) {
-      clearInterval(timer);
-      await sendMessage(userId, {
-        text: `✅ 0.0s`
-      }, token);
-      return;
-    }
-    
-    // Update countdown every 2 seconds para hindi masyadong spam
-    if (remaining % 2 === 0 || remaining <= 3) {
-      const formatted = String(remaining).padStart(2, '0') + 's';
-      await sendMessage(userId, {
-        text: `⏳ ${formatted}`
-      }, token);
-    }
-    
-  }, 1000);
 }
 
 async function getAIResponse(prompt, userId) {
   const endpoints = [
-    'https://api-library-kohi-production.up.railway.app/api/publicai',
-    'https://api-library-kohi-production.up.railway.app/api/copilot?model=gpt-3.5'
+    {
+      url: 'https://api-library-kohi-production.up.railway.app/api/publicai',
+      timeout: 3000,
+      getParams: () => ({ prompt, user: userId })
+    },
+    {
+      url: 'https://api-library-kohi-production.up.railway.app/api/pollination-ai',
+      timeout: 4000,
+      getParams: () => ({ prompt, model: 'openai-large', user: userId })
+    }
   ];
 
-  // Try each endpoint with shorter timeout
-  for (const url of endpoints) {
+  for (const endpoint of endpoints) {
     try {
-      const { data } = await axios.get(url, {
-        params: { prompt, user: userId },
-        timeout: 5000 // 5 seconds timeout
+      const { data } = await axios.get(endpoint.url, {
+        params: endpoint.getParams(),
+        timeout: endpoint.timeout
       });
 
       if (data?.data) {
         return typeof data.data === 'string' ? data.data : data.data.text;
       }
     } catch (error) {
-      continue; // Try next endpoint
+      continue;
     }
   }
-  
-  // If all endpoints fail
-  throw new Error('All endpoints failed');
+  return null;
 }
 
-function getFallbackResponse(prompt) {
+function getSmartReply(prompt) {
   const lower = prompt.toLowerCase().trim();
   
-  const responses = {
-    'hello': 'Hello! 👋',
-    'hi': 'Hi there! 😊',
-    'kamusta': 'Okay naman! Ikaw?',
-    'musta': 'Okay lang! Ikaw?',
-    'thanks': 'You\'re welcome! 👍',
-    'salamat': 'Walang anuman! 👍',
-    'good morning': 'Good morning! ☀️',
-    'good night': 'Good night! 🌙',
-    'how are you': 'I\'m doing great! Thanks! 😊',
+  // More intelligent fallbacks for serious questions
+  const replies = {
+    'what is': 'Interesting question! Let me think... 🤔',
+    'ano ang': 'Interesting question! Let me think... 🤔',
+    'how to': 'Great question! Let me analyze... 🤔',
+    'paano': 'Great question! Let me analyze... 🤔',
+    'why': 'That\'s a deep question! Let me reflect... 🤔',
+    'bakit': 'That\'s a deep question! Let me reflect... 🤔',
+    'who': 'Let me consider that... 🤔',
+    'sino': 'Let me consider that... 🤔',
     'default': 'Hmm, interesting! Tell me more. 🤔'
   };
   
-  for (const [key, response] of Object.entries(responses)) {
-    if (lower.includes(key)) return response;
+  for (const [key, reply] of Object.entries(replies)) {
+    if (lower.includes(key)) return reply;
   }
-  return responses.default;
+  return replies.default;
 }
