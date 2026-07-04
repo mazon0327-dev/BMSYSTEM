@@ -1,115 +1,189 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
+// Cooldown system
+const userCooldowns = new Map();
+const userMessages = new Map(); // Store message IDs for editing
+const COOLDOWN_TIME = 10;
+
 module.exports = {
   name: 'ai',
-  description: 'Conversational AI - Just chat naturally',
-  usage: 'ai [your message]',
+  description: 'AI with inline countdown',
+  usage: 'ai [message]',
   author: 'coffee',
 
   async execute(senderId, args, token) {
-    // Kunin ang buong message ng user (natural language)
-    const userMessage = args.join(' ').trim() || 'Hello';
+    const prompt = args.join(' ').trim() || 'Hello';
 
     try {
-      // Send typing indicator para alam nilang nag-iisip
-      await sendMessage(senderId, { typing: true }, token);
+      // Check cooldown
+      const cooldownCheck = checkCooldown(senderId);
+      if (cooldownCheck.onCooldown) {
+        // Update existing countdown message (not send new one)
+        await updateCountdown(senderId, cooldownCheck.remaining, token);
+        return;
+      }
 
-      // Try fast endpoints
-      const response = await getConversationalResponse(userMessage, senderId);
-      
-      // Clean response - remove unnecessary formatting
-      const cleanResponse = cleanConversationText(response);
-      
-      // Send as natural conversation
-      await sendMessage(senderId, {
-        text: cleanResponse
-      }, token);
+      // Process the request
+      await processAIRequest(senderId, prompt, token);
 
     } catch (error) {
       console.error('[AI Error]:', error.message);
-      
-      // Natural fallback response
-      const fallback = getNaturalFallback(userMessage);
       await sendMessage(senderId, {
-        text: fallback
+        text: '⚠️ Error. Try again.'
       }, token);
     }
   }
 };
 
-// Fast conversational endpoints
-const CONVERSATIONAL_ENDPOINTS = [
-  {
-    url: 'https://api-library-kohi-production.up.railway.app/api/publicai',
-    getParams: (prompt, user) => ({ 
-      prompt: prompt, 
-      user: user 
-    })
-  },
-  {
-    url: 'https://api-library-kohi-production.up.railway.app/api/copilot',
-    getParams: (prompt, user) => ({ 
-      prompt: prompt, 
-      model: 'gpt-3.5', 
-      user: user 
-    })
+function checkCooldown(userId) {
+  const lastRequest = userCooldowns.get(userId);
+  if (!lastRequest) {
+    return { onCooldown: false, remaining: 0 };
   }
-];
+  
+  const elapsed = (Date.now() - lastRequest) / 1000;
+  const remaining = Math.ceil(COOLDOWN_TIME - elapsed);
+  
+  if (remaining > 0) {
+    return { onCooldown: true, remaining };
+  }
+  
+  userCooldowns.delete(userId);
+  return { onCooldown: false, remaining: 0 };
+}
 
-async function getConversationalResponse(message, userId) {
-  // Subukan ang bawat endpoint
-  for (const endpoint of CONVERSATIONAL_ENDPOINTS) {
-    try {
-      const { data } = await axios.get(endpoint.url, {
-        params: endpoint.getParams(message, userId),
-        timeout: 3000
-      });
-
-      // Extract response
-      let response = null;
-      if (data?.data?.text) response = data.data.text;
-      else if (data?.data) response = data.data;
-      else if (data?.response) response = data.response;
-      
-      if (response && typeof response === 'string') {
-        return response;
-      }
-    } catch (error) {
-      continue; // Try next endpoint
+async function updateCountdown(userId, seconds, token) {
+  const formatted = String(seconds).padStart(2, '0') + 's';
+  
+  // Check if we have a message ID to edit
+  const messageId = userMessages.get(userId);
+  
+  if (messageId) {
+    // Edit the existing message (update the number only)
+    await sendMessage(userId, {
+      text: `${formatted}`,
+      edit: messageId // Edit existing message
+    }, token);
+  } else {
+    // First time - send new message
+    const sent = await sendMessage(userId, {
+      text: `${formatted}`
+    }, token);
+    
+    // Store message ID for future updates
+    if (sent?.message_id) {
+      userMessages.set(userId, sent.message_id);
     }
   }
+}
+
+async function processAIRequest(userId, prompt, token) {
+  // Send typing indicator
+  await sendMessage(userId, { typing: true }, token);
+
+  // Get AI response
+  const response = await getAIResponse(prompt, userId);
   
-  // Pag walang gumana, use fallback
-  return getNaturalFallback(message);
+  // Set cooldown
+  userCooldowns.set(userId, Date.now());
+  
+  // Send clean response
+  if (response) {
+    await sendMessage(userId, {
+      text: response.slice(0, 2000)
+    }, token);
+  } else {
+    await sendMessage(userId, {
+      text: getFallbackResponse(prompt)
+    }, token);
+  }
+  
+  // Start countdown after response
+  startCountdown(userId, token);
 }
 
-function cleanConversationText(text) {
-  return text
-    .replace(/\*\*(.+?)\*\*/g, '$1') // Remove bold formatting
-    .replace(/#{1,6}\s?/g, '') // Remove headers
-    .replace(/\n{3,}/g, '\n\n') // Limit newlines
-    .replace(/\s{2,}/g, ' ') // Remove extra spaces
-    .trim();
+async function startCountdown(userId, token) {
+  let remaining = COOLDOWN_TIME;
+  
+  // Send initial countdown message
+  const formatted = String(remaining).padStart(2, '0') + 's';
+  const sent = await sendMessage(userId, {
+    text: `${formatted}`
+  }, token);
+  
+  // Store message ID for editing
+  if (sent?.message_id) {
+    userMessages.set(userId, sent.message_id);
+  }
+  
+  // Update countdown every second
+  const timer = setInterval(async () => {
+    remaining--;
+    
+    if (remaining <= 0) {
+      clearInterval(timer);
+      userMessages.delete(userId);
+      
+      // Update to ready state
+      await sendMessage(userId, {
+        text: `0.0s`,
+        edit: userMessages.get(userId)
+      }, token);
+      return;
+    }
+    
+    // Update the same message with new number
+    const formatted = String(remaining).padStart(2, '0') + 's';
+    const messageId = userMessages.get(userId);
+    
+    if (messageId) {
+      await sendMessage(userId, {
+        text: `${formatted}`,
+        edit: messageId
+      }, token);
+    }
+    
+  }, 1000);
 }
 
-// Natural conversational fallbacks
-function getNaturalFallback(message) {
-  const lower = message.toLowerCase().trim();
+async function getAIResponse(prompt, userId) {
+  const endpoints = [
+    'https://api-library-kohi-production.up.railway.app/api/publicai',
+    'https://api-library-kohi-production.up.railway.app/api/copilot?model=gpt-3.5'
+  ];
+
+  for (const url of endpoints) {
+    try {
+      const { data } = await axios.get(url, {
+        params: { prompt, user: userId },
+        timeout: 8000
+      });
+
+      if (data?.data) {
+        return typeof data.data === 'string' ? data.data : data.data.text;
+      }
+    } catch (error) {
+      continue;
+    }
+  }
+  return null;
+}
+
+function getFallbackResponse(prompt) {
+  const lower = prompt.toLowerCase().trim();
   
   const responses = {
-    'hello': 'Hey! How are you doing? 😊',
-    'hi': 'Hi there! What\'s up? 👋',
-    'kamusta': 'Okay naman! Ikaw, kamusta na?',
-    'musta': 'Okay lang! Ikaw musta?',
-    'thanks': 'You\'re welcome! 😊',
+    'hello': 'Hello! 👋',
+    'hi': 'Hi there! 😊',
+    'kamusta': 'Okay naman! Ikaw?',
+    'musta': 'Okay lang! Ikaw?',
+    'thanks': 'You\'re welcome! 👍',
     'salamat': 'Walang anuman! 👍',
-    'good morning': 'Good morning! Have a great day! ☀️',
-    'good night': 'Good night! Sleep well! 🌙',
-    'how are you': 'I\'m doing great! Thanks for asking! 😊',
-    'ano pangalan mo': 'Ako si AI, pwede mo kong tawaging kahit ano! 😄',
-    'sino ka': 'Ako ang iyong AI assistant! Ready to chat anytime! 🤖',
-    'default': 'Hmm, interesting! Tell me more about that. 🤔'
+    'good morning': 'Good morning! ☀️',
+    'good night': 'Good night! 🌙',
+    'how are you': 'I\'m doing great! Thanks! 😊',
+    'default': 'Hmm, interesting! Tell me more. 🤔'
   };
   
   for (const [key, response] of Object.entries(responses)) {
