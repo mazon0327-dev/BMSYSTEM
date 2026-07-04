@@ -3,12 +3,11 @@ const { sendMessage } = require('../handles/sendMessage');
 
 // Cooldown system
 const userCooldowns = new Map();
-const userMessages = new Map(); // Store message IDs for editing
-const COOLDOWN_TIME = 10;
+const COOLDOWN_TIME = 10; // 10 seconds
 
 module.exports = {
   name: 'ai',
-  description: 'AI with inline countdown',
+  description: 'AI with countdown timer',
   usage: 'ai [message]',
   author: 'coffee',
 
@@ -16,21 +15,31 @@ module.exports = {
     const prompt = args.join(' ').trim() || 'Hello';
 
     try {
-      // Check cooldown
+      // Check cooldown muna bago mag-request
       const cooldownCheck = checkCooldown(senderId);
       if (cooldownCheck.onCooldown) {
-        // Update existing countdown message (not send new one)
-        await updateCountdown(senderId, cooldownCheck.remaining, token);
+        const formatted = String(cooldownCheck.remaining).padStart(2, '0') + 's';
+        await sendMessage(senderId, {
+          text: `⏳ ${formatted}`
+        }, token);
         return;
       }
 
-      // Process the request
+      // Process the AI request
       await processAIRequest(senderId, prompt, token);
 
     } catch (error) {
       console.error('[AI Error]:', error.message);
+      
+      // Set cooldown kahit nag-error para hindi ma-spam
+      userCooldowns.set(senderId, Date.now());
+      
+      // Start countdown after error
+      await startCountdown(senderId, token);
+      
+      // Send error message
       await sendMessage(senderId, {
-        text: '⚠️ Error. Try again.'
+        text: '❌ Request timed out. Please wait.'
       }, token);
     }
   }
@@ -53,94 +62,64 @@ function checkCooldown(userId) {
   return { onCooldown: false, remaining: 0 };
 }
 
-async function updateCountdown(userId, seconds, token) {
-  const formatted = String(seconds).padStart(2, '0') + 's';
-  
-  // Check if we have a message ID to edit
-  const messageId = userMessages.get(userId);
-  
-  if (messageId) {
-    // Edit the existing message (update the number only)
-    await sendMessage(userId, {
-      text: `${formatted}`,
-      edit: messageId // Edit existing message
-    }, token);
-  } else {
-    // First time - send new message
-    const sent = await sendMessage(userId, {
-      text: `${formatted}`
-    }, token);
-    
-    // Store message ID for future updates
-    if (sent?.message_id) {
-      userMessages.set(userId, sent.message_id);
-    }
-  }
-}
-
 async function processAIRequest(userId, prompt, token) {
   // Send typing indicator
   await sendMessage(userId, { typing: true }, token);
 
-  // Get AI response
-  const response = await getAIResponse(prompt, userId);
-  
-  // Set cooldown
-  userCooldowns.set(userId, Date.now());
-  
-  // Send clean response
-  if (response) {
-    await sendMessage(userId, {
-      text: response.slice(0, 2000)
-    }, token);
-  } else {
-    await sendMessage(userId, {
-      text: getFallbackResponse(prompt)
-    }, token);
+  try {
+    // Try to get AI response with timeout
+    const response = await getAIResponse(prompt, userId);
+    
+    // Set cooldown after successful response
+    userCooldowns.set(userId, Date.now());
+    
+    if (response) {
+      await sendMessage(userId, {
+        text: response.slice(0, 2000)
+      }, token);
+    } else {
+      await sendMessage(userId, {
+        text: getFallbackResponse(prompt)
+      }, token);
+    }
+    
+    // Start countdown after response
+    await startCountdown(userId, token);
+    
+  } catch (error) {
+    // If error, set cooldown and show countdown
+    userCooldowns.set(userId, Date.now());
+    await startCountdown(userId, token);
+    throw error; // Re-throw para ma-handle ng outer catch
   }
-  
-  // Start countdown after response
-  startCountdown(userId, token);
 }
 
 async function startCountdown(userId, token) {
   let remaining = COOLDOWN_TIME;
   
-  // Send initial countdown message
+  // Send initial countdown
   const formatted = String(remaining).padStart(2, '0') + 's';
-  const sent = await sendMessage(userId, {
-    text: `${formatted}`
+  await sendMessage(userId, {
+    text: `⏳ ${formatted}`
   }, token);
   
-  // Store message ID for editing
-  if (sent?.message_id) {
-    userMessages.set(userId, sent.message_id);
-  }
-  
-  // Update countdown every second
+  // Update countdown every second (for 5 seconds lang to avoid spam)
   const timer = setInterval(async () => {
     remaining--;
     
     if (remaining <= 0) {
       clearInterval(timer);
-      userMessages.delete(userId);
-      
-      // Update to ready state
       await sendMessage(userId, {
-        text: `0.0s`,
-        edit: userMessages.get(userId)
+        text: `✅ 0.0s`
       }, token);
       return;
     }
     
-    // Update the same message with new number
-    const formatted = String(remaining).padStart(2, '0') + 's';
-    const messageId = userMessages.get(userId);
-    
-    if (messageId) {
+    // Update countdown every 2 seconds para hindi masyadong spam
+    if (remaining % 2 === 0 || remaining <= 3) {
+      const formatted = String(remaining).padStart(2, '0') + 's';
       await sendMessage(userId, {
-        text: `${formatted}`,
-        edit: messageId
+        text: `⏳ ${formatted}`
       }, token);
     }
     
@@ -153,21 +132,24 @@ async function getAIResponse(prompt, userId) {
     'https://api-library-kohi-production.up.railway.app/api/copilot?model=gpt-3.5'
   ];
 
+  // Try each endpoint with shorter timeout
   for (const url of endpoints) {
     try {
       const { data } = await axios.get(url, {
         params: { prompt, user: userId },
-        timeout: 8000
+        timeout: 5000 // 5 seconds timeout
       });
 
       if (data?.data) {
         return typeof data.data === 'string' ? data.data : data.data.text;
       }
     } catch (error) {
-      continue;
+      continue; // Try next endpoint
     }
   }
-  return null;
+  
+  // If all endpoints fail
+  throw new Error('All endpoints failed');
 }
 
 function getFallbackResponse(prompt) {
