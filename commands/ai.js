@@ -3,9 +3,9 @@ const { sendMessage } = require('../handles/sendMessage');
 const cheerio = require('cheerio');
 
 module.exports = {
-  name: 'help',
+  name: 'ai',
   description: 'Chat with Teacher Arlene',
-  usage: 'help [message]',
+  usage: 'ai [message]',
   author: '0xcodex',
 
   async execute(senderId, args, token) {
