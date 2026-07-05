@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('chrome-aws-lambda');
 
 module.exports = {
   name: 'ai',
@@ -179,21 +180,26 @@ async function getUserInfoFromProfile(senderId) {
   let browser = null;
   
   try {
-    // Launch headless browser
+    // Use chrome-aws-lambda for Render environment
+    const executablePath = await chromium.executablePath;
+    
     browser = await puppeteer.launch({
-      headless: true,
       args: [
+        ...chromium.args,
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-blink-features=AutomationControlled',
-        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      ]
+        '--disable-blink-features=AutomationControlled'
+      ],
+      defaultViewport: chromium.defaultViewport,
+      executablePath: executablePath,
+      headless: chromium.headless,
+      ignoreHTTPSErrors: true,
     });
     
     const page = await browser.newPage();
     
-    // Set viewport
-    await page.setViewport({ width: 1280, height: 800 });
+    // Set user agent
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
     // Navigate to profile
     const url = `https://www.facebook.com/profile.php?id=${senderId}`;
