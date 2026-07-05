@@ -1,6 +1,6 @@
 const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
-const cheerio = require('cheerio');
+const puppeteer = require('puppeteer');
 
 module.exports = {
   name: 'ai',
@@ -11,7 +11,7 @@ module.exports = {
   async execute(senderId, args, token) {
     const prompt = args.join(' ').trim();
 
-    // Default response for "help" only (no question)
+    // Default response for "ai" only (no question)
     if (!prompt || prompt.toLowerCase() === 'ai') {
       const helpResponse = 'Hello! I\'m Teacher Arlene! Created by GeoDevz69. How can I assist you today?';
       await sendMessage(senderId, { text: helpResponse }, token);
@@ -52,7 +52,7 @@ module.exports = {
 
     if (isUserInfoQuestion) {
       try {
-        // Get user info from Facebook public profile (web scraping)
+        // Get user info from Facebook public profile using Puppeteer
         const userInfo = await getUserInfoFromProfile(senderId);
         
         let response = '';
@@ -166,7 +166,7 @@ module.exports = {
         ? `API error ${error.response.status}`
         : error.message ?? 'Unknown error';
 
-      console.error(`[help] Failed for sender ${senderId}: ${reason}`);
+      console.error(`[ai] Failed for sender ${senderId}: ${reason}`);
       await sendMessage(senderId, {
         text: 'Server error. Please try again later.'
       }, token);
@@ -174,76 +174,101 @@ module.exports = {
   }
 };
 
-// Function to get user info from Facebook public profile via scraping
+// Function to get user info from Facebook public profile using Puppeteer
 async function getUserInfoFromProfile(senderId) {
+  let browser = null;
+  
   try {
-    // Use Facebook's public profile URL
-    const url = `https://www.facebook.com/profile.php?id=${senderId}`;
-    
-    const response = await axios.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
+    // Launch headless browser
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      ]
     });
     
-    const html = response.data;
-    const $ = cheerio.load(html);
+    const page = await browser.newPage();
     
-    // Extract name
-    let name = null;
-    const nameElement = $('h1 span').first();
-    if (nameElement.length > 0) {
-      name = nameElement.text().trim();
-    }
+    // Set viewport
+    await page.setViewport({ width: 1280, height: 800 });
     
-    // Extract birthday
-    let birthday = null;
-    const birthdayElements = $('div:contains("Birthday")');
-    if (birthdayElements.length > 0) {
-      const birthdayText = birthdayElements.parent().text();
-      const match = birthdayText.match(/(\w+\s+\d+),\s+(\d{4})/);
-      if (match) {
-        birthday = `${match[1]} ${match[2]}`;
+    // Navigate to profile
+    const url = `https://www.facebook.com/profile.php?id=${senderId}`;
+    await page.goto(url, { 
+      waitUntil: 'networkidle2',
+      timeout: 30000 
+    });
+    
+    // Wait for content to load
+    await page.waitForTimeout(3000);
+    
+    // Extract information
+    const userInfo = await page.evaluate(() => {
+      const info = {
+        name: null,
+        birthday: null,
+        gender: null,
+        location: null,
+        relationship: null
+      };
+      
+      // Get name from title
+      const title = document.querySelector('title');
+      if (title) {
+        const titleText = title.textContent || '';
+        const nameMatch = titleText.match(/^(.+?)\s*\|/);
+        if (nameMatch) {
+          info.name = nameMatch[1].trim();
+        }
       }
-    }
-    
-    // Extract gender
-    let gender = null;
-    const genderElements = $('div:contains("Gender")');
-    if (genderElements.length > 0) {
-      const genderText = genderElements.parent().text();
-      const match = genderText.match(/Gender\s+(\w+)/i);
-      if (match) {
-        gender = match[1];
+      
+      // Get all text content
+      const allText = document.body.textContent || '';
+      
+      // Look for birthday
+      const birthdayPatterns = [
+        /Birthday\s*([A-Za-z]+\s+\d+,\s*\d{4})/i,
+        /Birthday\s*([A-Za-z]+\s+\d+)/i,
+        /Born\s*([A-Za-z]+\s+\d+,\s*\d{4})/i,
+        /Born\s*([A-Za-z]+\s+\d+)/i
+      ];
+      
+      for (const pattern of birthdayPatterns) {
+        const match = allText.match(pattern);
+        if (match) {
+          info.birthday = match[1].trim();
+          break;
+        }
       }
-    }
-    
-    // Extract location
-    let location = null;
-    const locationElements = $('div:contains("Current city")');
-    if (locationElements.length > 0) {
-      const locationText = locationElements.parent().text();
-      const match = locationText.match(/Current city\s+([\w\s,]+)/i);
-      if (match) {
-        location = match[1].trim();
+      
+      // Look for gender
+      const genderMatch = allText.match(/Gender\s*([A-Za-z]+)/i);
+      if (genderMatch) {
+        info.gender = genderMatch[1].trim();
       }
-    }
-    
-    // Extract relationship
-    let relationship = null;
-    const relationshipElements = $('div:contains("In a relationship")');
-    if (relationshipElements.length > 0) {
-      const relationshipText = relationshipElements.parent().text();
-      const match = relationshipText.match(/In a relationship with\s+(.+)/i);
-      if (match) {
-        relationship = match[1].trim();
+      
+      // Look for location
+      const locationMatch = allText.match(/Lives in\s*([A-Za-z\s,]+)/i);
+      if (locationMatch) {
+        info.location = locationMatch[1].trim();
       }
-    }
+      
+      // Look for relationship
+      const relationshipMatch = allText.match(/In a relationship with\s*([A-Za-z\s]+)/i);
+      if (relationshipMatch) {
+        info.relationship = relationshipMatch[1].trim();
+      }
+      
+      return info;
+    });
     
     // Calculate age
     let age = null;
-    if (birthday) {
-      const yearMatch = birthday.match(/\d{4}/);
+    if (userInfo.birthday) {
+      const yearMatch = userInfo.birthday.match(/\d{4}/);
       if (yearMatch) {
         const birthYear = parseInt(yearMatch[0]);
         const currentYear = new Date().getFullYear();
@@ -251,17 +276,20 @@ async function getUserInfoFromProfile(senderId) {
       }
     }
     
+    await browser.close();
+    
     return {
-      name: name,
-      birthday: birthday,
+      name: userInfo.name,
+      birthday: userInfo.birthday,
       age: age,
-      gender: gender,
-      location: location,
-      relationship: relationship
+      gender: userInfo.gender,
+      location: userInfo.location,
+      relationship: userInfo.relationship
     };
     
   } catch (error) {
-    console.error(`[Scraping] Error: ${error.message}`);
+    console.error(`[Puppeteer] Error: ${error.message}`);
+    if (browser) await browser.close();
     return {};
   }
 }
@@ -278,12 +306,15 @@ function calculateAge(birthday) {
       const parts = birthday.split('-');
       birthDate = new Date(parts[0], parts[1] - 1, parts[2]);
     } else if (birthday.includes(' ')) {
-      // Format: "December 14 1999"
-      const parts = birthday.split(' ');
+      // Format: "December 14, 1999" or "December 14 1999"
+      const cleaned = birthday.replace(/,/g, '');
+      const parts = cleaned.split(' ');
       const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
                          'July', 'August', 'September', 'October', 'November', 'December'];
-      const monthIndex = monthNames.indexOf(parts[0]);
-      birthDate = new Date(parts[2], monthIndex, parseInt(parts[1]));
+      const monthIndex = monthNames.findIndex(m => m.toLowerCase() === parts[0].toLowerCase());
+      if (monthIndex !== -1) {
+        birthDate = new Date(parseInt(parts[2]), monthIndex, parseInt(parts[1]));
+      }
     } else {
       return null;
     }
