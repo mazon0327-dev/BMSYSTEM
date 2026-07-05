@@ -3,43 +3,60 @@ const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
   name: 'ai',
-  description: 'Chat with AI',
+  description: 'Chat with Teacher Arlene',
   usage: 'ai [message]',
   author: '0xcodex',
 
   async execute(senderId, args, token) {
-    const prompt = args.join(' ').trim() || 'Hello';
+    const prompt = args.join(' ').trim() || 'Hai';
 
     try {
       const { data } = await axios.get(API_URL, {
-        params: { prompt, model: 'chatgpt4' },
+        params: { 
+          prompt: prompt,
+          model: 'chatgpt4'
+        },
         timeout: 15000
       });
 
-      if (!data?.answer) throw new Error('Invalid API response');
-      
-      const reply = cleanText(data.answer.trim());
-      await sendMessage(senderId, { text: reply }, token);
+      if (!data?.answer) {
+        throw new Error('Invalid API response');
+      }
+
+      // Plain text response - no formatting
+      const aiResponse = data.answer.trim();
+      await sendChunks(senderId, aiResponse, token);
 
     } catch (error) {
-      console.error(`[AI Error] ${error.message}`);
-      await sendMessage(senderId, { 
-        text: error.response?.status === 404 ? 'API not found.' :
-              error.response?.status === 500 ? 'Server error.' :
-              error.code === 'ECONNABORTED' ? 'Timeout.' :
-              'Error. Please try again.' 
+      const reason = error.response
+        ? `API error ${error.response.status}`
+        : error.message ?? 'Unknown error';
+
+      console.error(`[ai] Failed for sender ${senderId}: ${reason}`);
+      await sendMessage(senderId, {
+        text: 'Please try again after 15.0s.'
       }, token);
     }
   }
 };
 
+// Configuration
 const API_URL = 'https://yin-api.vercel.app/ai/chatgptfree';
+const MAX_CHUNK = 1900;
 
-function cleanText(text) {
-  return text
-    .replace(/[\u1D400-\u1D7FF]/g, '') // Remove mathematical bold
-    .replace(/[^\x00-\x7F]/g, '')       // Remove non-ASCII
-    .replace(/\s+/g, ' ')              // Fix spacing
-    .replace(/\s+([.,!?;:])/g, '$1')   // Fix punctuation
-    .trim();
+// Simple message splitter
+function splitMessage(text) {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += MAX_CHUNK) {
+    chunks.push(text.slice(i, i + MAX_CHUNK));
+  }
+  return chunks;
+}
+
+// Send messages in chunks
+async function sendChunks(senderId, text, token) {
+  const chunks = splitMessage(text);
+  for (let i = 0; i < chunks.length; i++) {
+    await sendMessage(senderId, { text: chunks[i] }, token);
+  }
 }
