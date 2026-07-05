@@ -8,7 +8,7 @@ module.exports = {
   author: '0xcodex',
 
   async execute(senderId, args, token) {
-    const prompt = args.join(' ').trim() || 'Hai';
+    const prompt = args.join(' ').trim() || 'Hello';
 
     try {
       const { data } = await axios.get(API_URL, {
@@ -23,8 +23,28 @@ module.exports = {
         throw new Error('Invalid API response');
       }
 
-      // Plain text response - no formatting
-      const aiResponse = data.answer.trim();
+      let aiResponse = data.answer.trim();
+      
+      // Convert **text** to Messenger bold format (*text*)
+      aiResponse = aiResponse.replace(/\*\*(.+?)\*\*/g, '*$1*');
+      
+      // Remove other markdown symbols but keep bold
+      aiResponse = aiResponse.replace(/\*/g, ''); // Remove single asterisks
+      aiResponse = aiResponse.replace(/#{1,6}\s/g, '');
+      aiResponse = aiResponse.replace(/---+/g, '');
+      aiResponse = aiResponse.replace(/__/g, '');
+      aiResponse = aiResponse.replace(/_/g, '');
+      
+      // Remove emojis
+      aiResponse = aiResponse.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
+      aiResponse = aiResponse.replace(/[\u{2600}-\u{27BF}]/gu, '');
+      aiResponse = aiResponse.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
+      
+      // Clean up extra spaces and newlines
+      aiResponse = aiResponse.replace(/\n{3,}/g, '\n\n');
+      aiResponse = aiResponse.replace(/[ \t]+/g, ' ');
+      aiResponse = aiResponse.trim();
+
       await sendChunks(senderId, aiResponse, token);
 
     } catch (error) {
@@ -34,17 +54,15 @@ module.exports = {
 
       console.error(`[ai] Failed for sender ${senderId}: ${reason}`);
       await sendMessage(senderId, {
-        text: 'Please try again after 15.0s.'
+        text: 'Server error. Please try again after 15.0s.'
       }, token);
     }
   }
 };
 
-// Configuration
 const API_URL = 'https://yin-api.vercel.app/ai/chatgptfree';
 const MAX_CHUNK = 1900;
 
-// Simple message splitter
 function splitMessage(text) {
   const chunks = [];
   for (let i = 0; i < text.length; i += MAX_CHUNK) {
@@ -53,7 +71,6 @@ function splitMessage(text) {
   return chunks;
 }
 
-// Send messages in chunks
 async function sendChunks(senderId, text, token) {
   const chunks = splitMessage(text);
   for (let i = 0; i < chunks.length; i++) {
