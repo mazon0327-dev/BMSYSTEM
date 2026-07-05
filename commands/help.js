@@ -2,25 +2,28 @@ const axios = require('axios');
 const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
-  name: 'help',
+  name: 'ai',
   description: 'Chat with AI',
-  usage: 'help [message]',
+  usage: 'ai [message]',
   author: '0xcodex',
 
   async execute(senderId, args, token) {
-    const prompt = args.join(' ').trim() || 'Hello';
+    const prompt = args.join(' ').trim() || 'Hai';
 
     try {
       const { data } = await axios.get(API_URL, {
-        params: { ask: prompt },
+        params: { 
+          prompt: prompt,
+          model: 'chatgpt4'
+        },
         timeout: 15000
       });
 
-      if (!data?.success || !data?.message) {
+      if (!data?.answer) {
         throw new Error('Invalid API response');
       }
 
-      const aiResponse = makeBold(data.message.trim());
+      const aiResponse = makeBold(data.answer.trim());
       await sendChunks(senderId, aiResponse, token);
 
     } catch (error) {
@@ -36,7 +39,7 @@ module.exports = {
   }
 };
 
-const API_URL = 'https://betadash-api-swordslush-production.up.railway.app/opera';
+const API_URL = 'https://yin-api.vercel.app/ai/chatgptfree';
 const MAX_CHUNK = 1900;
 
 const HEADER = '\n';
