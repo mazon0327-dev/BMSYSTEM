@@ -12,7 +12,7 @@ module.exports = {
     const prompt = args.join(' ').trim();
 
     // Default response for "help" only (no question)
-    if (!prompt || prompt.toLowerCase() === 'help') {
+    if (!prompt || prompt.toLowerCase() === 'ai') {
       const helpResponse = 'Hello! I\'m Teacher Arlene! Created by GeoDevz69. How can I assist you today?';
       await sendMessage(senderId, { text: helpResponse }, token);
       return;
@@ -32,7 +32,7 @@ module.exports = {
     );
 
     if (isOwnerQuestion) {
-      const ownerResponse = 'Wow! Nice question, well my boss created me, you can contact him now\nhttps://www.facebook.com/geotechph.net';
+      const ownerResponse = 'Wow! Nice question, well my boss GeoDevz69 created me, you can contact him here now\n\nhttps://www.facebook.com/geotechph.net';
       await sendMessage(senderId, { text: ownerResponse }, token);
       return;
     }
@@ -41,8 +41,8 @@ module.exports = {
     const userInfoKeywords = [
       'what is my name', 'ano pangalan ko', 'my name', 'pangalan ko',
       'whats my name', 'what\'s my name',
-      'when is my birthday', 'kelan birthday ko', 'my birthday', 'birthday ko',
-      'how old am i', 'ilan taon ko', 'my age', 'edad ko', 'age',
+      'when is my birthday', 'kailan birthday ko', 'kelan birthday ko', 'my birthday', 'birthday ko',
+      'how old am i', 'ilan taon naba ako', 'ilan taon na ako', 'my age', 'edad ko', 'age',
       'who am i', 'sino ako'
     ];
 
