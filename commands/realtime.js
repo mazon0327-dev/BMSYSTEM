@@ -3,7 +3,7 @@ const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
   name: 'realtime',
-  description: 'Chat with AI',
+  description: 'Chat with Teacher Arlene',
   usage: 'realtime [message]',
   author: '0xcodex',
 
@@ -23,7 +23,32 @@ module.exports = {
         throw new Error('Invalid API response');
       }
 
-      const aiResponse = data.answer.trim();
+      // Clean response - remove all unusual characters
+      let aiResponse = data.answer.trim();
+      
+      // Remove markdown bold/italic
+      aiResponse = aiResponse.replace(/\*\*/g, '');
+      aiResponse = aiResponse.replace(/\*/g, '');
+      aiResponse = aiResponse.replace(/__/g, '');
+      aiResponse = aiResponse.replace(/_/g, '');
+      
+      // Remove markdown headers
+      aiResponse = aiResponse.replace(/#{1,6}\s/g, '');
+      
+      // Remove emojis
+      aiResponse = aiResponse.replace(/[\u{1F000}-\u{1FFFF}]/gu, '');
+      aiResponse = aiResponse.replace(/[\u{2600}-\u{27BF}]/gu, '');
+      aiResponse = aiResponse.replace(/[\u{FE00}-\u{FEFF}]/gu, '');
+      
+      // Remove horizontal lines
+      aiResponse = aiResponse.replace(/---+/g, '');
+      aiResponse = aiResponse.replace(/___+/g, '');
+      
+      // Remove extra spaces and newlines
+      aiResponse = aiResponse.replace(/\n{3,}/g, '\n\n');
+      aiResponse = aiResponse.replace(/[ \t]+/g, ' ');
+      aiResponse = aiResponse.trim();
+
       await sendChunks(senderId, aiResponse, token);
 
     } catch (error) {
@@ -33,7 +58,7 @@ module.exports = {
 
       console.error(`[ai] Failed for sender ${senderId}: ${reason}`);
       await sendMessage(senderId, {
-        text: 'Please try again after 15.0s.'
+        text: 'Server error. Please try again later.'
       }, token);
     }
   }
