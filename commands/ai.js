@@ -7,7 +7,7 @@ const MAX_CHUNK = 1900;
 
 module.exports = {
   name: 'ai',
-  description: 'Chat with Teacher Arlene',
+  description: 'Chat with BonumMaster',
   usage: 'ai [message]',
   author: '0xcodex',
 
@@ -15,7 +15,7 @@ module.exports = {
     const prompt = args.join(' ').trim();
 
     // --- GREETING / HELP RESPONSE ---
-    // Return the "I'm Teacher Arlene" message for empty prompt, "help", or common greetings
+    // Return the "I'm BonumMaster" message for empty prompt, "help", or common greetings
     const greetingKeywords = [
       'hi', 'hello', 'hai', 'hey', 'greetings',
       'good morning', 'good afternoon', 'good evening',
@@ -27,7 +27,7 @@ module.exports = {
                        greetingKeywords.some(word => prompt.toLowerCase() === word);
 
     if (isGreeting) {
-      const helpResponse = 'Likewise! By the way I\'m Teacher Arlene! Created by GeoDevz69. How can I assist you today?';
+      const helpResponse = 'Likewise! By the way I\'m Your new Partner BonumMaster! FROM UNDERGROUND SECURITY. How can I assist you today?';
       await sendMessage(senderId, { text: helpResponse }, token);
       return;
     }
@@ -46,7 +46,7 @@ module.exports = {
     );
 
     if (isOwnerQuestion) {
-      const ownerResponse = 'Wow! Nice question, well my boss GeoDevz69 created me, you can contact him with this link below.\n\nhttps://www.facebook.com/geotechph.net';
+      const ownerResponse = 'Wow! Nice question, well Bonummaster created me, you can contact him with this link below.\n\nhttps://www.facebook.com/bonum.master';
       await sendMessage(senderId, { text: ownerResponse }, token);
       return;
     }
