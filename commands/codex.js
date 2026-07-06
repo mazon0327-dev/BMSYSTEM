@@ -30,7 +30,7 @@ module.exports = {
 
     if (lowerPrompt === 'codex' || lowerPrompt === 'help') {
       await sendMessage(senderId, { 
-        text: 'CODE-X Assistant\nCreated by GeoDevz69\n\nSupported Languages:\nHTML, CSS, JS, PHP, Python, Java, C++, C#, Ruby, SQL, Go, Rust, TypeScript, JSON, XML\n\nFeatures:\n- Code debugging\n- Code optimization\n- Code explanation\n- Syntax checking\n- Best practices\n\nExample: codex fix this function [paste code]' 
+        text: 'CODE-X Assistant\nCreated by Bonummaster\n\nSupported Languages:\nHTML, CSS, JS, PHP, Python, Java, C++, C#, Ruby, SQL, Go, Rust, TypeScript, JSON, XML\n\nFeatures:\n- Code debugging\n- Code optimization\n- Code explanation\n- Syntax checking\n- Best practices\n\nExample: codex fix this function [paste code]' 
       }, token);
       return;
     }
@@ -38,7 +38,7 @@ module.exports = {
     const ownerKeywords = ['owner', 'creator', 'gumawa', 'may ari', 'created', 'made', 'who made you', 'sino gumawa'];
     if (ownerKeywords.some(k => lowerPrompt.includes(k))) {
       await sendMessage(senderId, { 
-        text: 'My creator is GeoDevz69.\nFacebook: https://www.facebook.com/geotechph.net' 
+        text: 'My creator is Bonummaster.\nFacebook: https://www.facebook.com/bonum.master' 
       }, token);
       return;
     }
