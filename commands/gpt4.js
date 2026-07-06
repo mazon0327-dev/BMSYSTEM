@@ -3,9 +3,9 @@ const { sendMessage } = require('../handles/sendMessage');
 
 module.exports = {
   name: 'gpt4',
-  description: 'Chat with Teacher Arlene',
+  description: 'Chat with Bonummaster',
   usage: 'gpt4 [message]',
-  author: '0xcodex',
+  author: 'bonummaster',
 
   async execute(senderId, args, token) {
     const prompt = args.join(' ').trim() || 'Hello';
