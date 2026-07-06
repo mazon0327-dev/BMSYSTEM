@@ -7,8 +7,8 @@ const MAX_PROMPT_LENGTH = 10000;
 
 module.exports = {
   name: 'codex',
-  description: 'Chat with Teacher Arlene',
-  usage: 'codex [message]',
+  description: 'Advanced Code Assistant & Debugger',
+  usage: 'codex [code/message]',
   author: '0xcodex',
 
   async execute(senderId, args, token) {
@@ -16,7 +16,7 @@ module.exports = {
 
     if (!prompt) {
       await sendMessage(senderId, { 
-        text: 'Usage: ai [message]' 
+        text: 'Usage: codex [your code or question]' 
       }, token);
       return;
     }
@@ -26,16 +26,16 @@ module.exports = {
     }
 
     const lowerPrompt = prompt.toLowerCase();
-    const isCodeRequest = /<|>|\{|\}|function|class|const|let|var|<\?php|<!DOCTYPE|import|export|def|async|await|=>/.test(prompt);
+    const isCodeRequest = /<|>|\{|\}|function|class|const|let|var|<\?php|<!DOCTYPE|import|export|def|async|await|=>|#include|public class|System.out|SELECT|INSERT|UPDATE|DELETE|package|func|fn|interface|type|\.css|\.jsx|\.tsx/.test(prompt);
 
-    if (lowerPrompt === 'codex') {
+    if (lowerPrompt === 'codex' || lowerPrompt === 'help') {
       await sendMessage(senderId, { 
-        text: 'Teacher Arlene\nCreated by GeoDevz69\n\nSupports: HTML, CSS, JS, PHP, Python, C++, Java, SQL, and more.\n\nAsk me anything or paste your code for review.' 
+        text: 'CODE-X Assistant\nCreated by GeoDevz69\n\nSupported Languages:\nHTML, CSS, JS, PHP, Python, Java, C++, C#, Ruby, SQL, Go, Rust, TypeScript, JSON, XML\n\nFeatures:\n- Code debugging\n- Code optimization\n- Code explanation\n- Syntax checking\n- Best practices\n\nExample: codex fix this function [paste code]' 
       }, token);
       return;
     }
 
-    const ownerKeywords = ['owner', 'creator', 'gumawa', 'may ari', 'created', 'made'];
+    const ownerKeywords = ['owner', 'creator', 'gumawa', 'may ari', 'created', 'made', 'who made you', 'sino gumawa'];
     if (ownerKeywords.some(k => lowerPrompt.includes(k))) {
       await sendMessage(senderId, { 
         text: 'My creator is GeoDevz69.\nFacebook: https://www.facebook.com/geotechph.net' 
@@ -139,15 +139,15 @@ module.exports = {
         .trim();
 
       if (isCodeRequest) {
-        aiResponse = 'Code Analysis:\n\n' + aiResponse;
+        aiResponse = '[CODE-X ANALYSIS]\n\n' + aiResponse;
       }
 
       await sendChunks(senderId, aiResponse, token);
 
     } catch (error) {
-      console.error(`[AI] ${error.message}`);
+      console.error(`[CODE-X] ${error.message}`);
       let errorMsg = 'Server error. Please try again later.';
-      if (error.response?.status === 413) errorMsg = 'Message too large. Please split into smaller parts.';
+      if (error.response?.status === 413) errorMsg = 'Message too large. Split into smaller parts.';
       else if (error.code === 'ECONNABORTED') errorMsg = 'Request timeout. Try shorter message.';
       else if (error.response?.status === 429) errorMsg = 'Too many requests. Please wait.';
       else if (error.response?.status === 500) errorMsg = 'API server error. Try again later.';
