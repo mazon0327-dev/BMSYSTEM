@@ -1,112 +1,127 @@
 const express = require('express');
-const { readFile, readdir, watch } = require('fs/promises');
-const { join, resolve } = require('path');
+const path = require('path');
+const axios = require('axios');
 const { handleMessage } = require('./handles/handleMessage');
 const { handlePostback } = require('./handles/handlePostback');
 
 const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Middleware for parsing URL-encoded data
+app.use(express.static(path.join(__dirname, 'public'))); // Serve static files from the 'public' folder
+
+// Route for serving the privacy policy page
+app.get('/privacy-policy', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'privacy-policy.html'));
+});
+
+// Route for the homepage
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 const VERIFY_TOKEN = 'pagebot';
-const COMMANDS_PATH = join(__dirname, 'commands');
-const GRAPH_API = 'https://graph.facebook.com/v23.0/me';
+const INTERNAL_API_BASE = 'http://fi3.bot-hosting....'; // Put your Own Database Url here use https://github.com/wedfhujkkmhhgg233/databasefbpage
 
-let PAGE_ACCESS_TOKEN;
-
-app.use(express.json({ limit: '10mb' }));
-
-const loadToken = async () => PAGE_ACCESS_TOKEN = (await readFile('token.txt', 'utf8')).trim();
-
-const apiCall = async (endpoint, data) => {
-  const response = await fetch(`${GRAPH_API}${endpoint}?access_token=${PAGE_ACCESS_TOKEN}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-  if (!response.ok) throw new Error(`API Error: ${response.status}`);
-  return response.json();
-};
-
-
-
-const clearMenu = async () => {
-  try {
-    await fetch(`${GRAPH_API}/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}&fields=persistent_menu,get_started`, {
-      method: 'DELETE'
-    });
-  } catch (e) {
-    console.error('Menu clear warning:', e.message);
-  }
-};
-
-const setupMenu = async () => {
-  try {
-    await clearMenu();
-    
-    const menuItems = [{
-      type: 'postback',
-      title: 'Help',
-      payload: 'CMD_HELP'
-    }];
-    
-    await apiCall('/messenger_profile', {
-      get_started: { payload: 'GET_STARTED' },
-      persistent_menu: [{
-        locale: 'default',
-        composer_input_disabled: false,
-        call_to_actions: menuItems
-      }]
-    });
-
-    console.log(`✅ Menu set to Help only`);
-  } catch (e) {
-    console.error('❌ Menu setup failed:', e.message);
-  }
-};
-
-const startWatcher = async () => {
-  try {
-    const watcher = watch(COMMANDS_PATH);
-    for await (const { eventType, filename } of watcher) {
-      if (eventType === 'change' && filename?.endsWith('.js')) setupMenu();
-    }
-  } catch (e) {
-    console.error('Watcher error:', e.message);
-  }
-};
-
+// Edit Also the handlemessage Database Url
 app.get('/webhook', (req, res) => {
   const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
-  return mode === 'subscribe' && token === VERIFY_TOKEN 
-    ? (console.log('✅ Webhook verified'), res.status(200).send(challenge))
-    : res.sendStatus(403);
-});
 
-app.post('/webhook', (req, res) => {
-  if (req.body.object !== 'page') return res.sendStatus(404);
-  
-  req.body.entry?.forEach(entry => 
-    entry.messaging?.forEach(event => {
-      if (event.message) handleMessage(event, PAGE_ACCESS_TOKEN);
-      else if (event.postback) handlePostback(event, PAGE_ACCESS_TOKEN);
-    })
-  );
-  
-  res.status(200).send('EVENT_RECEIVED');
-});
-
-const start = async () => {
-  try {
-    await loadToken();
-    const PORT = process.env.PORT || 3000;
-    
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      setupMenu();
-      startWatcher();
-    });
-  } catch (e) {
-    console.error('Startup failed:', e.message);
-    process.exit(1);
+  if (mode && token) {
+    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+      console.log('WEBHOOK_VERIFIED');
+      return res.status(200).send(challenge);
+    }
+    return res.sendStatus(403);
   }
-};
 
-start();
+  res.sendStatus(400); // Bad request if neither mode nor token are provided
+});
+
+// Webhook event handling endpoint
+app.post('/webhook', (req, res) => {
+  const { body } = req;
+
+  if (body.object === 'page') {
+    body.entry?.forEach(entry => {
+      entry.messaging?.forEach(event => {
+        if (event.message) {
+          handleMessage(event);
+        } else if (event.postback) {
+          handlePostback(event);
+        }
+      });
+    });
+
+    return res.status(200).send('EVENT_RECEIVED');
+  }
+
+  res.sendStatus(404); // Not Found if the object is not 'page'
+});
+
+// /login endpoint (delegates to the internal server)
+app.get('/login', async (req, res) => {
+  const { token } = req.query;
+
+  if (!token) {
+    return res.status(400).json({ error: 'Token is required.' });
+  }
+
+  try {
+    const response = await axios.get(`${INTERNAL_API_BASE}/create`, { params: { token } });
+    res.json(response.data); // Forward the internal server's response
+  } catch (error) {
+    console.error('Error in /login:', error.message);
+    res.status(500).json({ error: 'Internal Server Error.' });
+  }
+});
+
+// /delete endpoint (delegates to the internal server)
+app.get('/delete', async (req, res) => {
+  const { token, accesskey } = req.query;
+
+  if (!token || !accesskey) {
+    return res.status(400).json({ error: 'Token and AccessKey are required.' });
+  }
+
+  try {
+    const response = await axios.get(`${INTERNAL_API_BASE}/delete`, { params: { token, accesskey } });
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error in /delete:', error.message);
+    res.status(500).json({ error: 'Internal Server Error.' });
+  }
+});
+
+// /find endpoint (delegates to the internal server)
+app.get('/find', async (req, res) => {
+  const { json } = req.query;
+
+  if (!json) {
+    return res.status(400).json({ error: 'JSON file name is required.' });
+  }
+
+  try {
+    const response = await axios.get(`${INTERNAL_API_BASE}/find`, { params: { json } });
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error in /find:', error.message);
+    res.status(500).json({ error: 'Internal Server Error.' });
+  }
+});
+
+app.get('/total', async (req, res) => {
+  try {
+    // Replace 'http://localhost:20422/total' with your actual API URL if needed
+    const response = await axios.get(`${INTERNAL_API_BASE}/total`);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching /total:', error.message);
+    res.status(500).json({ error: 'Failed to fetch total data from /total endpoint.' });
+  }
+});
+
+// Server initialization
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`External server is running on port ${PORT}`);
+});
